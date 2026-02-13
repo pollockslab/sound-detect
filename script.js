@@ -1,6 +1,9 @@
-let audioContext, analyser, timerId, wakeLock, mediaRecorder;
+// [설정] 증폭률: 1.0은 원음, 숫자가 클수록 소리가 커집니다. (예: 2.0, 3.5)
+const AMPLIFICATION_LEVEL = 1.0; 
+
+let audioContext, analyser, timerId, wakeLock, mediaRecorder, gainNode;
 let isMonitoring = false, isRecording = false;
-let preRecordChunks = [], recordingTimeout = null, lastDetectedTime = 0;
+let recordingTimeout = null, lastDetectedTime = 0;
 
 const dbDisplay = document.getElementById('db-display');
 const thresholdInput = document.getElementById('threshold');
@@ -8,7 +11,7 @@ const btnToggle = document.getElementById('btn-toggle');
 const monitorScreen = document.querySelector('.monitor-screen');
 const audioListContainer = document.getElementById('audio-list-container');
 
-// IndexedDB Init
+// IndexedDB 초기화
 const DB_NAME = "NoiseMonitorDB", STORE_NAME = "logs", AUDIO_STORE = "audios";
 let db;
 const request = indexedDB.open(DB_NAME, 3);
@@ -50,29 +53,43 @@ function addLogToUI(log, isInitial = false) {
 async function toggleMonitoring() {
     if (!isMonitoring) {
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-            if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+            if ('wakeLock' in navigator) {
+                try { wakeLock = await navigator.wakeLock.request('screen'); } catch(e) {}
+            }
+
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            analyser = audioContext.createAnalyser(); analyser.fftSize = 256;
-            audioContext.createMediaStreamSource(stream).connect(analyser);
+            const source = audioContext.createMediaStreamSource(stream);
             
-            // 여기서 mimeType 체크를 유연하게 함
-            setupMediaRecorder(stream);
+            gainNode = audioContext.createGain();
+            // 최상단 상수를 사용해 증폭률을 설정합니다.
+            gainNode.gain.value = AMPLIFICATION_LEVEL; 
+
+            analyser = audioContext.createAnalyser();
+            analyser.fftSize = 256;
+
+            source.connect(gainNode);
+            gainNode.connect(analyser);
+
+            const destination = audioContext.createMediaStreamDestination();
+            gainNode.connect(destination);
             
-            isMonitoring = true; document.body.classList.add('monitoring');
+            setupMediaRecorder(destination.stream);
+            
+            isMonitoring = true; 
+            document.body.classList.add('monitoring');
             btnToggle.innerText = "중지"; btnToggle.classList.add('active');
-            saveLogToDB('EVENT', '측정 시작', thresholdInput.value);
+            saveLogToDB('EVENT', `측정 시작 (증폭률: ${AMPLIFICATION_LEVEL})`, thresholdInput.value);
             timerId = setInterval(checkNoise, 100);
         } catch (err) { 
-            console.error(err);
             alert("마이크 실행 오류: " + err.message); 
         }
     } else { stopAll(); }
 }
 
 function setupMediaRecorder(stream) {
-    // 사파리 대응 mimeType 순차 확인
-    const types = ['audio/mp4', 'audio/webm', 'audio/ogg'];
+    const types = ['audio/webm', 'audio/mp4', 'audio/ogg'];
     let selectedType = types.find(t => MediaRecorder.isTypeSupported(t)) || '';
     
     mediaRecorder = new MediaRecorder(stream, selectedType ? { mimeType: selectedType } : {});
@@ -86,12 +103,19 @@ function setupMediaRecorder(stream) {
     };
     
     mediaRecorder.onstop = () => {
-        if (chunks.length > 0 && isMonitoring) {
+        if (chunks.length > 0) {
             const blob = new Blob(chunks, { type: mediaRecorder.mimeType });
             const tx = db.transaction([AUDIO_STORE], "readwrite");
-            tx.objectStore(AUDIO_STORE).add({ blob, timestamp: Date.now(), time: new Date().toLocaleTimeString() });
+            tx.objectStore(AUDIO_STORE).add({ 
+                blob: blob, 
+                timestamp: Date.now(), 
+                time: new Date().toLocaleTimeString('ko-KR', { hour12: false }) 
+            });
         }
-        if (isMonitoring) { chunks = []; mediaRecorder.start(1000); }
+        if (isMonitoring) {
+            chunks = [];
+            mediaRecorder.start(1000); 
+        }
     };
     mediaRecorder.start(1000);
 }
@@ -111,19 +135,33 @@ function checkNoise() {
         if (!isRecording) { isRecording = true; document.body.classList.add('recording-active'); }
         if (recordingTimeout) clearTimeout(recordingTimeout);
         recordingTimeout = setTimeout(() => {
-            if (isRecording) { isRecording = false; document.body.classList.remove('recording-active'); mediaRecorder.stop(); }
+            if (isRecording && isMonitoring) { 
+                isRecording = false; 
+                document.body.classList.remove('recording-active'); 
+                mediaRecorder.stop(); 
+            }
         }, 60000);
     } else if (!isRecording) { monitorScreen.classList.remove('detected'); }
 }
 
 function stopAll() {
-    if (wakeLock) { wakeLock.release(); wakeLock = null; }
-    clearInterval(timerId); if (recordingTimeout) clearTimeout(recordingTimeout);
-    if (audioContext) audioContext.close();
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') { isRecording = false; mediaRecorder.stop(); }
-    isMonitoring = false; document.body.classList.remove('monitoring', 'recording-active', 'detected');
-    btnToggle.innerText = "측정 시작"; btnToggle.classList.remove('active');
-    dbDisplay.innerText = "0"; saveLogToDB('EVENT', '측정 중단', thresholdInput.value);
+    if (wakeLock) { try { wakeLock.release(); } catch(e) {} wakeLock = null; }
+    clearInterval(timerId);
+    if (recordingTimeout) clearTimeout(recordingTimeout);
+    
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+    }
+
+    setTimeout(() => {
+        if (audioContext) { audioContext.close(); audioContext = null; }
+        isMonitoring = false;
+        isRecording = false;
+        document.body.classList.remove('monitoring', 'recording-active', 'detected');
+        btnToggle.innerText = "측정 시작"; btnToggle.classList.remove('active');
+        dbDisplay.innerText = "0"; 
+        saveLogToDB('EVENT', '측정 중단', thresholdInput.value);
+    }, 500);
 }
 
 document.getElementById('btn-show-audios').onclick = () => {
@@ -131,18 +169,21 @@ document.getElementById('btn-show-audios').onclick = () => {
     const tx = db.transaction([AUDIO_STORE], "readonly");
     tx.objectStore(AUDIO_STORE).getAll().onsuccess = (e) => {
         const list = e.target.result.sort((a,b) => b.timestamp - a.timestamp);
-        audioListContainer.innerHTML = list.length ? "" : "<p style='text-align:center;color:#555;'>기록 없음</p>";
+        audioListContainer.innerHTML = list.length ? "" : "<p style='text-align:center;color:#555;margin-top:20px;'>기록 없음</p>";
         list.forEach(a => {
             const date = new Date(a.timestamp);
             const name = `녹음_${date.getFullYear()}${String(date.getMonth()+1).padStart(2,'0')}${String(date.getDate()).padStart(2,'0')}_${String(date.getHours()).padStart(2,'0')}${String(date.getMinutes()).padStart(2,'0')}`;
             const div = document.createElement('div'); div.className = 'audio-item';
-            div.innerHTML = `<div><b>${name}</b><br><small>${a.time}</small></div><button class="btn-down" style="background:#30d158;padding:8px;border-radius:8px">받기</button>`;
+            div.innerHTML = `<div><b>${name}</b><br><small>${a.time}</small></div><button class="btn-down" style="background:#30d158;padding:8px 12px;border-radius:8px;border:none;color:white;font-weight:bold;">받기</button>`;
+            
             div.querySelector('.btn-down').onclick = () => {
-                const url = URL.createObjectURL(a.blob); const link = document.createElement('a');
-                link.href = url; 
+                const url = URL.createObjectURL(a.blob);
+                const link = document.createElement('a');
+                link.href = url;
                 const ext = a.blob.type.includes('mp4') ? 'm4a' : 'webm';
                 link.download = `${name}.${ext}`; 
-                link.click(); URL.revokeObjectURL(url);
+                link.click();
+                URL.revokeObjectURL(url);
             };
             audioListContainer.appendChild(div);
         });
