@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>층간소음 측정기</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="container">
+    <div class="canvas-container">
+        <canvas id="noise-chart"></canvas>
+        <div id="db-display">0</div>
+    </div>
+
+    <div class="controls">
+        <div class="threshold-group">
+            <label for="threshold">감지 기준: </label>
+            <input type="number" id="threshold" value="75"> dB
+        </div>
+    </div>
+
+    <div class="button-group">
+        <button id="btn-toggle">측정 시작</button>
+        <button id="btn-export">기록 내보내기</button>
+    </div>
+
+    <div class="log-container">
+        <h3>소음 감지 기록</h3>
+        <ul id="detection-list">
+            <li class="empty-msg">기록이 없습니다.</li>
+        </ul>
+    </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+</html>
