@@ -2,11 +2,7 @@ html, body {
     height: 100%; margin: 0; padding: 0; overflow: hidden;
     background-color: #121212; color: white;
 }
-
-body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    display: flex; justify-content: center;
-}
+body { font-family: -apple-system, sans-serif; display: flex; justify-content: center; }
 
 .container {
     background: #1e1e1e; padding: 1.5rem; width: 100%; max-width: 500px;
@@ -16,43 +12,47 @@ body {
 
 #version-info { font-size: 0.7rem; color: #444; text-align: right; margin-bottom: 5px; }
 
-/* 그래프 대신 숫자 강조 영역 */
 .monitor-screen {
-    flex: 0 0 140px; background: #000; border-radius: 20px;
+    flex: 0 0 160px; background: #000; border-radius: 20px;
     display: flex; flex-direction: column; justify-content: center; align-items: center;
     margin-bottom: 1rem; position: relative; border: 2px solid #333;
 }
 
-#status-dot {
-    position: absolute; top: 15px; left: 15px; width: 10px; height: 10px;
-    border-radius: 50%; background: #333;
-}
+#status-dot { position: absolute; top: 15px; left: 15px; width: 10px; height: 10px; border-radius: 50%; background: #333; }
 .monitoring #status-dot { background: #30d158; box-shadow: 0 0 10px #30d158; }
 
-#db-display { font-size: 5rem; font-weight: 800; transition: all 0.1s; }
-.detected #db-display { color: #ff453a; transform: scale(1.1); }
+#rec-indicator { position: absolute; top: 15px; right: 15px; color: #ff453a; font-weight: bold; font-size: 0.8rem; display: none; }
+.recording-active #rec-indicator { display: block; animation: blink 1s infinite; }
+
+@keyframes blink { 50% { opacity: 0; } }
+
+#db-display { font-size: 5.5rem; font-weight: 800; transition: color 0.1s; }
+.detected #db-display { color: #ff453a; }
 .unit { font-size: 1rem; color: #666; margin-top: -10px; }
 
 .controls { margin-bottom: 1rem; text-align: center; }
 .threshold-group { background: #333; padding: 8px 20px; border-radius: 50px; display: inline-block; }
-input[type="number"] {
-    background: transparent; border: none; color: #ff453a;
-    font-size: 1.3rem; font-weight: bold; width: 60px; text-align: center; outline: none;
-}
+input { background: transparent; border: none; color: #ff453a; font-size: 1.3rem; font-weight: bold; width: 60px; text-align: center; outline: none; }
 
-.button-group { display: flex; gap: 10px; margin-bottom: 1rem; }
-#btn-toggle, #btn-export {
-    padding: 16px; border-radius: 14px; border: none; font-weight: bold; cursor: pointer; color: white;
-}
-#btn-toggle { flex: 2; font-size: 1.1rem; background: #0a84ff; }
+.button-group { display: flex; gap: 8px; margin-bottom: 1rem; }
+button { padding: 16px; border-radius: 14px; border: none; font-weight: bold; cursor: pointer; color: white; transition: opacity 0.2s; }
+button:active { opacity: 0.7; }
+
+#btn-toggle { flex: 2; background: #0a84ff; font-size: 1.1rem; }
 #btn-toggle.active { background: #ff453a; }
-#btn-export { flex: 1; font-size: 0.85rem; background: #3a3a3c; }
+#btn-export { flex: 1; background: #3a3a3c; font-size: 0.8rem; }
+#btn-show-audios { flex: 1; background: #5856d6; font-size: 0.8rem; }
 
-.log-container {
-    flex: 1; background: #252525; border-radius: 16px; padding: 1rem;
-    overflow-y: auto; -webkit-overflow-scrolling: touch; min-height: 0;
-}
-
-h3 { margin: 0 0 10px 0; font-size: 0.9rem; color: #aaa; border-bottom: 1px solid #333; padding-bottom: 8px; }
+.log-container { flex: 1; background: #252525; border-radius: 16px; padding: 1rem; overflow-y: auto; -webkit-overflow-scrolling: touch; min-height: 0; }
+h3 { margin: 0 0 10px 0; font-size: 0.85rem; color: #888; border-bottom: 1px solid #333; padding-bottom: 5px; }
 ul { list-style: none; padding: 0; margin: 0; }
-li { padding: 12px 10px; border-bottom: 1px solid #333; font-size: 0.85rem; display: flex; justify-content: space-between; }
+li { padding: 12px 0; border-bottom: 1px solid #333; font-size: 0.85rem; display: flex; justify-content: space-between; }
+
+/* Modal Style */
+#audio-modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 1000; justify-content: center; align-items: center; }
+.modal-content { background: #1c1c1e; width: 90%; max-width: 450px; height: 80%; border-radius: 24px; display: flex; flex-direction: column; padding: 20px; box-sizing: border-box; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+#audio-list-container { flex: 1; overflow-y: auto; }
+.audio-item { background: #2c2c2e; padding: 15px; border-radius: 12px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+#btn-clear-audios { background: #ff453a; margin-top: 10px; padding: 12px; }
+#btn-close-modal { background: none; font-size: 1.8rem; color: #888; padding: 0 10px; }

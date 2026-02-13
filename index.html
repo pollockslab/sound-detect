@@ -3,18 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>층간소음 측정기 - 고효율 모드</title>
-    <link rel="stylesheet" href="style.css?v=20260213_1630">
+    <title>층간소음 증거 수집기 v2</title>
+    <link rel="stylesheet" href="style.css?v=20260213_final">
 </head>
 <body>
 
 <div class="container">
-    <div id="version-info">v.2026-02-13 15:59</div>
+    <div id="version-info">v.2026-02-13 16:40</div>
 
     <div class="monitor-screen">
         <div id="status-dot"></div>
         <div id="db-display">0</div>
         <div class="unit">dB</div>
+        <div id="rec-indicator">● REC</div>
     </div>
 
     <div class="controls">
@@ -26,17 +27,29 @@
 
     <div class="button-group">
         <button id="btn-toggle">측정 시작</button>
-        <button id="btn-export">기록 내보내기</button>
+        <button id="btn-export">로그 저장</button>
+        <button id="btn-show-audios">녹음 목록</button>
     </div>
 
     <div class="log-container">
-        <h3>소음 감지 기록 (최신 20개)</h3>
+        <h3>최신 감지 로그 (20개)</h3>
         <ul id="detection-list">
-            <li class="empty-msg">기록이 없습니다.</li>
+            <li class="empty-msg">데이터가 없습니다.</li>
         </ul>
     </div>
 </div>
 
-<script src="script.js?v=20260213_1630"></script>
+<div id="audio-modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2>녹음 증거 목록</h2>
+            <button id="btn-close-modal">&times;</button>
+        </div>
+        <div id="audio-list-container"></div>
+        <button id="btn-clear-audios">전체 삭제</button>
+    </div>
+</div>
+
+<script src="script.js?v=20260213_final"></script>
 </body>
 </html>

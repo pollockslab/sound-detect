@@ -1,131 +1,149 @@
 
-
-let audioContext = null;
-let analyser = null;
-let timerId = null; // requestAnimationFrame 대신 타이머 사용
-let isMonitoring = false;
-let wakeLock = null;
-let lastDetectedTime = 0;
+let audioContext, analyser, timerId, wakeLock, mediaRecorder;
+let isMonitoring = false, isRecording = false;
+let preRecordChunks = [], recordingTimeout = null, lastDetectedTime = 0;
 
 const dbDisplay = document.getElementById('db-display');
 const thresholdInput = document.getElementById('threshold');
 const btnToggle = document.getElementById('btn-toggle');
-const btnExport = document.getElementById('btn-export');
-const detectionList = document.getElementById('detection-list');
 const monitorScreen = document.querySelector('.monitor-screen');
+const audioListContainer = document.getElementById('audio-list-container');
 
-const DB_NAME = "NoiseMonitorDB";
-const STORE_NAME = "logs";
+// IndexedDB Init
+const DB_NAME = "NoiseMonitorDB", STORE_NAME = "logs", AUDIO_STORE = "audios";
 let db;
-
-const request = indexedDB.open(DB_NAME, 1);
+const request = indexedDB.open(DB_NAME, 3);
 request.onupgradeneeded = (e) => {
-    db = e.target.result;
-    if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: "id", autoIncrement: true });
-    }
+    const d = e.target.result;
+    if (!d.objectStoreNames.contains(STORE_NAME)) d.createObjectStore(STORE_NAME, { keyPath: "id", autoIncrement: true });
+    if (!d.objectStoreNames.contains(AUDIO_STORE)) d.createObjectStore(AUDIO_STORE, { keyPath: "id", autoIncrement: true });
 };
 request.onsuccess = (e) => { db = e.target.result; loadLogsFromDB(); };
 
 function saveLogToDB(type, value, threshold) {
     if (!db) return;
-    const transaction = db.transaction([STORE_NAME], "readwrite");
-    const store = transaction.objectStore(STORE_NAME);
+    const tx = db.transaction([STORE_NAME], "readwrite");
     const date = new Date();
-    const timeStr = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}:${String(date.getSeconds()).padStart(2, '0')}`;
+    const timeStr = date.toLocaleTimeString('ko-KR', { hour12: false });
     const entry = { type, value, threshold, time: timeStr, timestamp: date.getTime() };
-    store.add(entry);
+    tx.objectStore(STORE_NAME).add(entry);
     addLogToUI(entry);
+    return timeStr;
 }
 
 function loadLogsFromDB() {
-    const transaction = db.transaction([STORE_NAME], "readonly");
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.getAll();
-    request.onsuccess = () => {
-        const logs = request.result;
-        detectionList.innerHTML = "";
-        logs.sort((a, b) => b.timestamp - a.timestamp).slice(0, 20).forEach(log => addLogToUI(log, true));
-        if (logs.length === 0) detectionList.innerHTML = '<li class="empty-msg">기록이 없습니다.</li>';
+    const tx = db.transaction([STORE_NAME], "readonly");
+    tx.objectStore(STORE_NAME).getAll().onsuccess = (e) => {
+        const logs = e.target.result.sort((a,b) => b.timestamp - a.timestamp);
+        document.getElementById('detection-list').innerHTML = "";
+        logs.slice(0, 20).forEach(log => addLogToUI(log, true));
     };
 }
 
 function addLogToUI(log, isInitial = false) {
-    const emptyMsg = document.querySelector('.empty-msg');
-    if (emptyMsg) emptyMsg.remove();
+    const list = document.getElementById('detection-list');
+    const empty = list.querySelector('.empty-msg'); if(empty) empty.remove();
     const li = document.createElement('li');
-    if (log.type === 'EVENT') {
-        li.style.color = "#0a84ff";
-        li.innerHTML = `<span>${log.time}</span> <strong>${log.value}</strong>`;
-    } else {
-        li.innerHTML = `<span>${log.time}</span> <span style="color:#ff453a; font-weight:bold;">${log.value} dB 감지</span>`;
-    }
-    if (isInitial) detectionList.appendChild(li);
-    else {
-        detectionList.insertBefore(li, detectionList.firstChild);
-        if (detectionList.children.length > 20) detectionList.removeChild(detectionList.lastChild);
-    }
+    li.innerHTML = log.type === 'EVENT' ? `<span style="color:#0a84ff">${log.time} - ${log.value}</span>` : `<span>${log.time}</span> <span style="color:#ff453a; font-weight:bold;">${log.value} dB 감지 (녹음됨)</span>`;
+    if(isInitial) list.appendChild(li); else { list.insertBefore(li, list.firstChild); if(list.children.length > 20) list.removeChild(list.lastChild); }
 }
 
 async function toggleMonitoring() {
     if (!isMonitoring) {
         try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
             if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            analyser = audioContext.createAnalyser();
-            analyser.fftSize = 256; // 연산량 감소
+            analyser = audioContext.createAnalyser(); analyser.fftSize = 256;
             audioContext.createMediaStreamSource(stream).connect(analyser);
-
-            isMonitoring = true;
-            document.body.classList.add('monitoring');
-            btnToggle.innerText = "중지";
-            btnToggle.classList.add('active');
+            setupMediaRecorder(stream);
+            isMonitoring = true; document.body.classList.add('monitoring');
+            btnToggle.innerText = "중지"; btnToggle.classList.add('active');
             saveLogToDB('EVENT', '측정 시작', thresholdInput.value);
-            
-            // 100ms마다 한 번씩만 계산 (초당 10번)
-            timerId = setInterval(checkNoise, 100); 
-        } catch (err) { alert("마이크 권한 필요"); }
-    } else {
-        if (wakeLock) { wakeLock.release(); wakeLock = null; }
-        clearInterval(timerId);
-        if (audioContext) audioContext.close();
-        isMonitoring = false;
-        document.body.classList.remove('monitoring');
-        btnToggle.innerText = "측정 시작";
-        btnToggle.classList.remove('active');
-        dbDisplay.innerText = "0";
-        saveLogToDB('EVENT', '측정 중단', thresholdInput.value);
-    }
+            timerId = setInterval(checkNoise, 100);
+        } catch (err) { alert("마이크 권한이 필요합니다."); }
+    } else { stopAll(); }
+}
+
+function setupMediaRecorder(stream) {
+    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+    let chunks = [];
+    mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+            chunks.push(e.data);
+            if (!isRecording && chunks.length > 5) chunks.shift(); // 5초 버퍼 유지
+        }
+    };
+    mediaRecorder.onstop = () => {
+        if (chunks.length > 0 && isMonitoring) {
+            const blob = new Blob(chunks, { type: 'audio/webm' });
+            const tx = db.transaction([AUDIO_STORE], "readwrite");
+            tx.objectStore(AUDIO_STORE).add({ blob, timestamp: Date.now(), time: new Date().toLocaleTimeString() });
+        }
+        if (isMonitoring) { chunks = []; mediaRecorder.start(1000); }
+    };
+    mediaRecorder.start(1000);
 }
 
 function checkNoise() {
-    const dataArray = new Uint8Array(analyser.frequencyBinCount);
-    analyser.getByteTimeDomainData(dataArray);
-
-    let sumSquares = 0;
-    for (const amplitude of dataArray) {
-        const norm = (amplitude / 128) - 1;
-        sumSquares += norm * norm;
-    }
-    const rms = Math.sqrt(sumSquares / dataArray.length);
-    let dbValue = Math.round(20 * Math.log10(rms) + 115);
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteTimeDomainData(data);
+    let sum = 0; for (let v of data) { let n = (v/128)-1; sum += n*n; }
+    let dbValue = Math.round(20 * Math.log10(Math.sqrt(sum/data.length)) + 115);
     dbValue = Math.max(0, dbValue);
-
     dbDisplay.innerText = dbValue;
-    const threshold = parseInt(thresholdInput.value);
+    const th = parseInt(thresholdInput.value);
 
-    if (dbValue >= threshold) {
+    if (dbValue >= th) {
         monitorScreen.classList.add('detected');
-        const now = Date.now();
-        if (now - lastDetectedTime > 1000) { // 1초 간격 중복 기록 방지
-            saveLogToDB('DETECTION', dbValue, threshold);
-            lastDetectedTime = now;
-        }
-    } else {
-        monitorScreen.classList.remove('detected');
-    }
+        if (Date.now() - lastDetectedTime > 2000) { saveLogToDB('DETECTION', dbValue, th); lastDetectedTime = Date.now(); }
+        if (!isRecording) { isRecording = true; document.body.classList.add('recording-active'); }
+        if (recordingTimeout) clearTimeout(recordingTimeout);
+        recordingTimeout = setTimeout(() => {
+            if (isRecording) { isRecording = false; document.body.classList.remove('recording-active'); mediaRecorder.stop(); }
+        }, 60000);
+    } else if (!isRecording) { monitorScreen.classList.remove('detected'); }
 }
 
+function stopAll() {
+    if (wakeLock) { wakeLock.release(); wakeLock = null; }
+    clearInterval(timerId); if (recordingTimeout) clearTimeout(recordingTimeout);
+    if (audioContext) audioContext.close();
+    if (mediaRecorder) { isRecording = false; mediaRecorder.stop(); }
+    isMonitoring = false; document.body.classList.remove('monitoring', 'recording-active', 'detected');
+    btnToggle.innerText = "측정 시작"; btnToggle.classList.remove('active');
+    dbDisplay.innerText = "0"; saveLogToDB('EVENT', '측정 중단', thresholdInput.value);
+}
+
+// 팝업 & 내보내기 로직
+document.getElementById('btn-show-audios').onclick = () => {
+    document.getElementById('audio-modal').style.display = 'flex';
+    const tx = db.transaction([AUDIO_STORE], "readonly");
+    tx.objectStore(AUDIO_STORE).getAll().onsuccess = (e) => {
+        const list = e.target.result.sort((a,b) => b.timestamp - a.timestamp);
+        audioListContainer.innerHTML = list.length ? "" : "<p style='text-align:center;color:#555;'>기록 없음</p>";
+        list.forEach(a => {
+            const date = new Date(a.timestamp);
+            const name = `녹음_${date.getFullYear()}${String(date.getMonth()+1).padStart(2,'0')}${String(date.getDate()).padStart(2,'0')}_${String(date.getHours()).padStart(2,'0')}${String(date.getMinutes()).padStart(2,'0')}`;
+            const div = document.createElement('div'); div.className = 'audio-item';
+            div.innerHTML = `<div><b>${name}</b><br><small>${a.time}</small></div><button class="btn-down" style="background:#30d158;padding:8px;border-radius:8px">받기</button>`;
+            div.querySelector('.btn-down').onclick = () => {
+                const url = URL.createObjectURL(a.blob); const link = document.createElement('a');
+                link.href = url; link.download = `${name}.webm`; link.click(); URL.revokeObjectURL(url);
+            };
+            audioListContainer.appendChild(div);
+        });
+    };
+};
+
+document.getElementById('btn-close-modal').onclick = () => document.getElementById('audio-modal').style.display = 'none';
+document.getElementById('btn-clear-audios').onclick = () => { if(confirm("전체 삭제?")) db.transaction([AUDIO_STORE], "readwrite").objectStore(AUDIO_STORE).clear().onsuccess = () => document.getElementById('btn-show-audios').click(); };
+document.getElementById('btn-export').onclick = () => {
+    db.transaction([STORE_NAME], "readonly").objectStore(STORE_NAME).getAll().onsuccess = (e) => {
+        const logs = e.target.result.sort((a,b) => a.timestamp - b.timestamp);
+        let txt = logs.map(l => `[${l.time}] ${l.type==='EVENT'?l.value:'감지:'+l.value+'dB'} (기준:${l.threshold})`).join('\n');
+        const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), txt], { type: "text/plain" });
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `noise_log.txt`; a.click();
+    };
+};
 btnToggle.onclick = toggleMonitoring;
-btnExport.onclick = () => { /* 기존 export 함수와 동일 */ };
