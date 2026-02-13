@@ -1,126 +1,58 @@
-/* 기본 초기화 */
 html, body {
-    height: 100%;
-    margin: 0;
-    padding: 0;
-    overflow: hidden; /* 전체 스크롤 방지 */
+    height: 100%; margin: 0; padding: 0; overflow: hidden;
+    background-color: #121212; color: white;
 }
 
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    display: flex;
-    justify-content: center;
-    background-color: #121212;
-    color: white;
-}
-
-#version-info {
-    font-size: 0.7rem;
-    color: #555;
-    text-align: right;
-    margin-bottom: 5px;
-    flex-shrink: 0;
+    display: flex; justify-content: center;
 }
 
 .container {
-    background: #1e1e1e;
-    padding: 1.5rem;
-    width: 100%;
-    max-width: 500px;
-    /* 사파리 vh 대응: 표준 vh 대신 사용 가능하면 최대한 채우도록 설정 */
-    height: 100vh;
-    height: -webkit-fill-available; 
-    display: flex;
-    flex-direction: column;
-    box-sizing: border-box;
-    overflow: hidden; /* 내부 요소가 넘쳐도 밖으로 스크롤 안 생기게 */
+    background: #1e1e1e; padding: 1.5rem; width: 100%; max-width: 500px;
+    height: 100vh; height: -webkit-fill-available;
+    display: flex; flex-direction: column; box-sizing: border-box;
 }
 
-.canvas-container {
-    position: relative;
-    width: 100%;
-    height: 160px; /* 높이 약간 조절 */
-    background: #000;
-    border-radius: 16px;
-    margin-bottom: 1rem;
-    flex-shrink: 0;
+#version-info { font-size: 0.7rem; color: #444; text-align: right; margin-bottom: 5px; }
+
+/* 그래프 대신 숫자 강조 영역 */
+.monitor-screen {
+    flex: 0 0 140px; background: #000; border-radius: 20px;
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    margin-bottom: 1rem; position: relative; border: 2px solid #333;
 }
 
-canvas { width: 100%; height: 100%; }
-
-#db-display {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    font-size: 3.5rem;
-    font-weight: 800;
-    pointer-events: none;
+#status-dot {
+    position: absolute; top: 15px; left: 15px; width: 10px; height: 10px;
+    border-radius: 50%; background: #333;
 }
+.monitoring #status-dot { background: #30d158; box-shadow: 0 0 10px #30d158; }
 
-.controls { 
-    margin-bottom: 1rem; 
-    text-align: center; 
-    flex-shrink: 0; 
-}
+#db-display { font-size: 5rem; font-weight: 800; transition: all 0.1s; }
+.detected #db-display { color: #ff453a; transform: scale(1.1); }
+.unit { font-size: 1rem; color: #666; margin-top: -10px; }
 
-.threshold-group {
-    background: #333;
-    padding: 8px 16px;
-    border-radius: 50px;
-    display: inline-block;
-}
-
+.controls { margin-bottom: 1rem; text-align: center; }
+.threshold-group { background: #333; padding: 8px 20px; border-radius: 50px; display: inline-block; }
 input[type="number"] {
     background: transparent; border: none; color: #ff453a;
-    font-size: 1.2rem; font-weight: bold; width: 55px; text-align: center; outline: none;
+    font-size: 1.3rem; font-weight: bold; width: 60px; text-align: center; outline: none;
 }
 
-.button-group { 
-    display: flex; 
-    gap: 10px; 
-    margin-bottom: 1.5rem; 
-    flex-shrink: 0; 
-}
-
+.button-group { display: flex; gap: 10px; margin-bottom: 1rem; }
 #btn-toggle, #btn-export {
-    padding: 16px; border-radius: 14px; border: none;
-    font-weight: bold; cursor: pointer;
-    color: white;
+    padding: 16px; border-radius: 14px; border: none; font-weight: bold; cursor: pointer; color: white;
 }
-
 #btn-toggle { flex: 2; font-size: 1.1rem; background: #0a84ff; }
 #btn-toggle.active { background: #ff453a; }
-
 #btn-export { flex: 1; font-size: 0.85rem; background: #3a3a3c; }
 
-/* 로그 컨테이너 스크롤 설정 */
 .log-container {
-    flex: 1; /* 남은 공간 모두 차지 */
-    background: #252525;
-    border-radius: 16px;
-    padding: 1rem;
-    overflow-y: auto; /* 여기만 스크롤 생김 */
-    -webkit-overflow-scrolling: touch; /* iOS 부드러운 스크롤 */
-    min-height: 0; /* flex 자식의 스크롤 문제를 방지하는 핵심 */
+    flex: 1; background: #252525; border-radius: 16px; padding: 1rem;
+    overflow-y: auto; -webkit-overflow-scrolling: touch; min-height: 0;
 }
 
-h3 { 
-    margin-top: 0; 
-    font-size: 0.9rem; 
-    color: #aaa; 
-    border-bottom: 1px solid #333; 
-    padding-bottom: 8px; 
-    position: sticky; 
-    top: 0; 
-    background: #252525; 
-    z-index: 1; 
-}
-
+h3 { margin: 0 0 10px 0; font-size: 0.9rem; color: #aaa; border-bottom: 1px solid #333; padding-bottom: 8px; }
 ul { list-style: none; padding: 0; margin: 0; }
-li {
-    padding: 10px; border-bottom: 1px solid #333;
-    font-size: 0.85rem; color: #efefef;
-    display: flex; justify-content: space-between;
-}
-.empty-msg { color: #555; text-align: center; margin-top: 20px; }
+li { padding: 12px 10px; border-bottom: 1px solid #333; font-size: 0.85rem; display: flex; justify-content: space-between; }
