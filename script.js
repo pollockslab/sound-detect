@@ -1,10 +1,15 @@
+// 버전 정보 생성 (v.년월일시분초)
+const now = new Date();
+const versionStr = `v.${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+document.getElementById('version-info').innerText = versionStr;
+
 let audioContext = null;
 let analyser = null;
 let animationId = null;
 let dbValues = new Array(80).fill(0);
 let lastDetectedTime = 0; 
 let isMonitoring = false;
-let wakeLock = null; // 화면 꺼짐 방지 객체
+let wakeLock = null;
 
 const canvas = document.getElementById('noise-chart');
 const ctx = canvas.getContext('2d');
@@ -14,7 +19,6 @@ const btnToggle = document.getElementById('btn-toggle');
 const btnExport = document.getElementById('btn-export');
 const detectionList = document.getElementById('detection-list');
 
-// --- IndexedDB 설정 ---
 const DB_NAME = "NoiseMonitorDB";
 const STORE_NAME = "logs";
 let db;
@@ -38,9 +42,6 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
-/**
- * 로그 저장 (IndexedDB)
- */
 function saveLogToDB(type, value, threshold) {
     if (!db) return;
     const transaction = db.transaction([STORE_NAME], "readwrite");
@@ -53,9 +54,6 @@ function saveLogToDB(type, value, threshold) {
     addLogToUI(entry);
 }
 
-/**
- * 로그 불러오기
- */
 function loadLogsFromDB() {
     const transaction = db.transaction([STORE_NAME], "readonly");
     const store = transaction.objectStore(STORE_NAME);
@@ -64,8 +62,9 @@ function loadLogsFromDB() {
     request.onsuccess = () => {
         const logs = request.result;
         detectionList.innerHTML = "";
-        logs.sort((a, b) => b.timestamp - a.timestamp).forEach(log => {
-            addLogToUI(log);
+        // 화면에는 최신 20개만 표시
+        logs.sort((a, b) => b.timestamp - a.timestamp).slice(0, 20).forEach(log => {
+            addLogToUI(log, true); // 초기 로딩 시에는 append
         });
         if (logs.length === 0) {
             detectionList.innerHTML = '<li class="empty-msg">기록이 없습니다.</li>';
@@ -74,9 +73,9 @@ function loadLogsFromDB() {
 }
 
 /**
- * UI 리스트 추가
+ * UI 리스트 추가 (20개 제한 로직 포함)
  */
-function addLogToUI(log) {
+function addLogToUI(log, isInitial = false) {
     const emptyMsg = document.querySelector('.empty-msg');
     if (emptyMsg) emptyMsg.remove();
 
@@ -84,16 +83,22 @@ function addLogToUI(log) {
     if (log.type === 'EVENT') {
         li.style.backgroundColor = "#2a2a2a";
         li.style.color = "#0a84ff";
-        li.innerHTML = `<span class="time">${log.time}</span> <span><strong>${log.value}</strong> (기준: ${log.threshold}dB)</span>`;
+        li.innerHTML = `<span class="time">${log.time}</span> <span><strong>${log.value}</strong> (${log.threshold}dB)</span>`;
     } else {
-        li.innerHTML = `<span class="time">${log.time}</span> <span class="value">${log.value} dB 감지됨</span>`;
+        li.innerHTML = `<span class="time">${log.time}</span> <span class="value">${log.value} dB 감지</span>`;
     }
-    detectionList.insertBefore(li, detectionList.firstChild);
+    
+    if (isInitial) {
+        detectionList.appendChild(li);
+    } else {
+        detectionList.insertBefore(li, detectionList.firstChild);
+        // 실시간 추가 시 20개가 넘으면 마지막 요소 삭제
+        if (detectionList.children.length > 20) {
+            detectionList.removeChild(detectionList.lastChild);
+        }
+    }
 }
 
-/**
- * 기록 내보내기 (BOM 추가로 한글 깨짐 방지)
- */
 function exportLogs() {
     if (!db) return;
     const transaction = db.transaction([STORE_NAME], "readonly");
@@ -102,20 +107,12 @@ function exportLogs() {
 
     request.onsuccess = () => {
         const logs = request.result;
-        if (logs.length === 0) {
-            alert("내보낼 기록이 없습니다.");
-            return;
-        }
+        if (logs.length === 0) { alert("내보낼 기록이 없습니다."); return; }
 
         logs.sort((a, b) => a.timestamp - b.timestamp);
-
-        let content = "=== 층간소음 모니터링 리포트 ===\n\n";
+        let content = "=== 층간소음 모니터링 리포트 (전체 데이터) ===\n\n";
         logs.forEach(log => {
-            if (log.type === 'EVENT') {
-                content += `[${log.time}] ${log.value} (설정 기준: ${log.threshold}dB)\n`;
-            } else {
-                content += `[${log.time}] 감지: ${log.value}dB (기준: ${log.threshold}dB)\n`;
-            }
+            content += `[${log.time}] ${log.type === 'EVENT' ? log.value : '감지: ' + log.value + 'dB'} (기준: ${log.threshold}dB)\n`;
         });
 
         const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
@@ -123,10 +120,8 @@ function exportLogs() {
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
         const now = new Date();
-        const fileName = `noise_log_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}.txt`;
-
         link.href = url;
-        link.download = fileName;
+        link.download = `noise_log_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}.txt`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -134,25 +129,14 @@ function exportLogs() {
     };
 }
 
-/**
- * 측정 토글 (Wake Lock 포함)
- */
 async function toggleMonitoring() {
     const threshold = parseInt(thresholdInput.value);
 
     if (!isMonitoring) {
         try {
-            // 1. 화면 꺼짐 방지 요청 (지원하는 브라우저인 경우)
             if ('wakeLock' in navigator) {
-                try {
-                    wakeLock = await navigator.wakeLock.request('screen');
-                    console.log("Wake Lock 활성화");
-                } catch (err) {
-                    console.warn("Wake Lock 요청 실패:", err);
-                }
+                wakeLock = await navigator.wakeLock.request('screen');
             }
-
-            // 2. 마이크 연결
             const stream = await navigator.mediaDevices.getUserMedia({ 
                 audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } 
             });
@@ -169,22 +153,12 @@ async function toggleMonitoring() {
             update();
         } catch (err) {
             alert("마이크 권한을 허용해 주세요.");
-            console.error(err);
         }
     } else {
-        // 1. 화면 꺼짐 방지 해제
-        if (wakeLock !== null) {
-            wakeLock.release().then(() => {
-                wakeLock = null;
-                console.log("Wake Lock 해제");
-            });
-        }
-
-        // 2. 측정 중지
+        if (wakeLock !== null) { wakeLock.release().then(() => wakeLock = null); }
         isMonitoring = false;
         if (animationId) cancelAnimationFrame(animationId);
         if (audioContext) audioContext.close();
-        
         saveLogToDB('EVENT', '측정 중단', threshold);
         btnToggle.innerText = "측정 시작";
         btnToggle.classList.remove('active');
@@ -216,12 +190,9 @@ function update() {
     if (dbValue >= threshold) {
         const now = Date.now();
         if (now - lastDetectedTime > 1000) {
-            dbDisplay.style.color = "#ff453a";
             saveLogToDB('DETECTION', dbValue, threshold);
             lastDetectedTime = now;
         }
-    } else {
-        dbDisplay.style.color = "white";
     }
     animationId = requestAnimationFrame(update);
 }
@@ -260,9 +231,6 @@ function drawGraph() {
 btnToggle.onclick = toggleMonitoring;
 btnExport.onclick = exportLogs;
 
-/**
- * 탭이 다시 활성화될 때 Wake Lock 복구 (시스템 보안 정책 대응)
- */
 document.addEventListener('visibilitychange', async () => {
     if (wakeLock !== null && document.visibilityState === 'visible') {
         wakeLock = await navigator.wakeLock.request('screen');
