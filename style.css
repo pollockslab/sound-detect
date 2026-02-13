@@ -1,11 +1,17 @@
+/* 기본 초기화 */
+html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden; /* 전체 스크롤 방지 */
+}
+
 body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     display: flex;
     justify-content: center;
     background-color: #121212;
     color: white;
-    margin: 0;
-    padding: env(safe-area-inset-top) 0;
 }
 
 #version-info {
@@ -13,6 +19,7 @@ body {
     color: #555;
     text-align: right;
     margin-bottom: 5px;
+    flex-shrink: 0;
 }
 
 .container {
@@ -20,16 +27,19 @@ body {
     padding: 1.5rem;
     width: 100%;
     max-width: 500px;
-    height: 100vh; /* 높이 고정 */
+    /* 사파리 vh 대응: 표준 vh 대신 사용 가능하면 최대한 채우도록 설정 */
+    height: 100vh;
+    height: -webkit-fill-available; 
     display: flex;
     flex-direction: column;
     box-sizing: border-box;
+    overflow: hidden; /* 내부 요소가 넘쳐도 밖으로 스크롤 안 생기게 */
 }
 
 .canvas-container {
     position: relative;
     width: 100%;
-    height: 180px;
+    height: 160px; /* 높이 약간 조절 */
     background: #000;
     border-radius: 16px;
     margin-bottom: 1rem;
@@ -48,7 +58,11 @@ canvas { width: 100%; height: 100%; }
     pointer-events: none;
 }
 
-.controls { margin-bottom: 1rem; text-align: center; flex-shrink: 0; }
+.controls { 
+    margin-bottom: 1rem; 
+    text-align: center; 
+    flex-shrink: 0; 
+}
 
 .threshold-group {
     background: #333;
@@ -62,31 +76,47 @@ input[type="number"] {
     font-size: 1.2rem; font-weight: bold; width: 55px; text-align: center; outline: none;
 }
 
-.button-group { display: flex; gap: 10px; margin-bottom: 1.5rem; flex-shrink: 0; }
-
-#btn-toggle {
-    flex: 2; padding: 16px; border-radius: 14px; border: none;
-    font-weight: bold; font-size: 1.1rem; cursor: pointer;
-    background: #0a84ff; color: white;
+.button-group { 
+    display: flex; 
+    gap: 10px; 
+    margin-bottom: 1.5rem; 
+    flex-shrink: 0; 
 }
+
+#btn-toggle, #btn-export {
+    padding: 16px; border-radius: 14px; border: none;
+    font-weight: bold; cursor: pointer;
+    color: white;
+}
+
+#btn-toggle { flex: 2; font-size: 1.1rem; background: #0a84ff; }
 #btn-toggle.active { background: #ff453a; }
 
-#btn-export {
-    flex: 1; padding: 16px; border-radius: 14px; border: none;
-    font-weight: bold; font-size: 0.85rem; cursor: pointer;
-    background: #3a3a3c; color: white;
-}
+#btn-export { flex: 1; font-size: 0.85rem; background: #3a3a3c; }
 
 /* 로그 컨테이너 스크롤 설정 */
 .log-container {
-    flex: 1;
+    flex: 1; /* 남은 공간 모두 차지 */
     background: #252525;
     border-radius: 16px;
     padding: 1rem;
-    overflow-y: auto; /* 세로 스크롤 생성 */
+    overflow-y: auto; /* 여기만 스크롤 생김 */
+    -webkit-overflow-scrolling: touch; /* iOS 부드러운 스크롤 */
+    min-height: 0; /* flex 자식의 스크롤 문제를 방지하는 핵심 */
 }
 
-h3 { margin-top: 0; font-size: 0.9rem; color: #aaa; border-bottom: 1px solid #333; padding-bottom: 8px; position: sticky; top: 0; background: #252525; z-index: 1; }
+h3 { 
+    margin-top: 0; 
+    font-size: 0.9rem; 
+    color: #aaa; 
+    border-bottom: 1px solid #333; 
+    padding-bottom: 8px; 
+    position: sticky; 
+    top: 0; 
+    background: #252525; 
+    z-index: 1; 
+}
+
 ul { list-style: none; padding: 0; margin: 0; }
 li {
     padding: 10px; border-bottom: 1px solid #333;
