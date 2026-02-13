@@ -4,6 +4,7 @@ let animationId = null;
 let dbValues = new Array(80).fill(0);
 let lastDetectedTime = 0; 
 let isMonitoring = false;
+let wakeLock = null; // 화면 꺼짐 방지 객체
 
 const canvas = document.getElementById('noise-chart');
 const ctx = canvas.getContext('2d');
@@ -37,6 +38,9 @@ function resizeCanvas() {
 window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 
+/**
+ * 로그 저장 (IndexedDB)
+ */
 function saveLogToDB(type, value, threshold) {
     if (!db) return;
     const transaction = db.transaction([STORE_NAME], "readwrite");
@@ -49,6 +53,9 @@ function saveLogToDB(type, value, threshold) {
     addLogToUI(entry);
 }
 
+/**
+ * 로그 불러오기
+ */
 function loadLogsFromDB() {
     const transaction = db.transaction([STORE_NAME], "readonly");
     const store = transaction.objectStore(STORE_NAME);
@@ -56,7 +63,7 @@ function loadLogsFromDB() {
 
     request.onsuccess = () => {
         const logs = request.result;
-        detectionList.innerHTML = ""; // 초기화
+        detectionList.innerHTML = "";
         logs.sort((a, b) => b.timestamp - a.timestamp).forEach(log => {
             addLogToUI(log);
         });
@@ -66,6 +73,9 @@ function loadLogsFromDB() {
     };
 }
 
+/**
+ * UI 리스트 추가
+ */
 function addLogToUI(log) {
     const emptyMsg = document.querySelector('.empty-msg');
     if (emptyMsg) emptyMsg.remove();
@@ -82,7 +92,7 @@ function addLogToUI(log) {
 }
 
 /**
- * 기록 내보내기 함수 (BOM 추가로 한글 깨짐 방지)
+ * 기록 내보내기 (BOM 추가로 한글 깨짐 방지)
  */
 function exportLogs() {
     if (!db) return;
@@ -97,7 +107,6 @@ function exportLogs() {
             return;
         }
 
-        // 시간순 정렬 (오래된 순 -> 최신 순)
         logs.sort((a, b) => a.timestamp - b.timestamp);
 
         let content = "=== 층간소음 모니터링 리포트 ===\n\n";
@@ -109,35 +118,41 @@ function exportLogs() {
             }
         });
 
-        // --- 한글 깨짐 방지 핵심: UTF-8 BOM 추가 ---
-        // \ufeff는 UTF-8 파일임을 알리는 식별자입니다.
         const bom = new Uint8Array([0xEF, 0xBB, 0xBF]);
         const blob = new Blob([bom, content], { type: "text/plain;charset=utf-8" });
-        
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
-        
         const now = new Date();
         const fileName = `noise_log_${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}.txt`;
 
         link.href = url;
         link.download = fileName;
-        
-        // 모바일 브라우저 호환성을 위한 트리거
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        
-        // 메모리 해제
         setTimeout(() => URL.revokeObjectURL(url), 100);
     };
 }
 
+/**
+ * 측정 토글 (Wake Lock 포함)
+ */
 async function toggleMonitoring() {
     const threshold = parseInt(thresholdInput.value);
 
     if (!isMonitoring) {
         try {
+            // 1. 화면 꺼짐 방지 요청 (지원하는 브라우저인 경우)
+            if ('wakeLock' in navigator) {
+                try {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    console.log("Wake Lock 활성화");
+                } catch (err) {
+                    console.warn("Wake Lock 요청 실패:", err);
+                }
+            }
+
+            // 2. 마이크 연결
             const stream = await navigator.mediaDevices.getUserMedia({ 
                 audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } 
             });
@@ -154,11 +169,22 @@ async function toggleMonitoring() {
             update();
         } catch (err) {
             alert("마이크 권한을 허용해 주세요.");
+            console.error(err);
         }
     } else {
+        // 1. 화면 꺼짐 방지 해제
+        if (wakeLock !== null) {
+            wakeLock.release().then(() => {
+                wakeLock = null;
+                console.log("Wake Lock 해제");
+            });
+        }
+
+        // 2. 측정 중지
         isMonitoring = false;
         if (animationId) cancelAnimationFrame(animationId);
         if (audioContext) audioContext.close();
+        
         saveLogToDB('EVENT', '측정 중단', threshold);
         btnToggle.innerText = "측정 시작";
         btnToggle.classList.remove('active');
@@ -233,3 +259,12 @@ function drawGraph() {
 
 btnToggle.onclick = toggleMonitoring;
 btnExport.onclick = exportLogs;
+
+/**
+ * 탭이 다시 활성화될 때 Wake Lock 복구 (시스템 보안 정책 대응)
+ */
+document.addEventListener('visibilitychange', async () => {
+    if (wakeLock !== null && document.visibilityState === 'visible') {
+        wakeLock = await navigator.wakeLock.request('screen');
+    }
+});
