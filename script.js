@@ -1,6 +1,3 @@
-// 버전 정보 생성 (v.년월일시분초)
-const versionStr = 'v.20260213 1544';
-document.getElementById('version-info').innerText = versionStr;
 
 let audioContext = null;
 let analyser = null;
