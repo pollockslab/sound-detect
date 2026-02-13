@@ -1,6 +1,5 @@
 // 버전 정보 생성 (v.년월일시분초)
-const now = new Date();
-const versionStr = `v.${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
+const versionStr = 'v.20260213 1544';
 document.getElementById('version-info').innerText = versionStr;
 
 let audioContext = null;
