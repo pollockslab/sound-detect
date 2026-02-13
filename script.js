@@ -1,4 +1,3 @@
-
 let audioContext, analyser, timerId, wakeLock, mediaRecorder;
 let isMonitoring = false, isRecording = false;
 let preRecordChunks = [], recordingTimeout = null, lastDetectedTime = 0;
@@ -51,86 +50,50 @@ function addLogToUI(log, isInitial = false) {
 async function toggleMonitoring() {
     if (!isMonitoring) {
         try {
-            // iOS 사파리 대응: 오디오 트랙을 명확히 가져옴
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                audio: { 
-                    echoCancellation: false, 
-                    noiseSuppression: false, 
-                    autoGainControl: false 
-                } 
-            });
-            
-            if ('wakeLock' in navigator) {
-                wakeLock = await navigator.wakeLock.request('screen');
-            }
-            
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+            if ('wakeLock' in navigator) wakeLock = await navigator.wakeLock.request('screen');
             audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            analyser = audioContext.createAnalyser();
-            analyser.fftSize = 256;
+            analyser = audioContext.createAnalyser(); analyser.fftSize = 256;
             audioContext.createMediaStreamSource(stream).connect(analyser);
-
-            // 중요: setupMediaRecorder 실행 시 발생하는 에러를 잡기 위해 순서 조정
-            setupMediaRecorder(stream);
-
-            isMonitoring = true;
-            document.body.classList.add('monitoring');
-            btnToggle.innerText = "중지";
-            btnToggle.classList.add('active');
-            saveLogToDB('EVENT', '측정 시작', thresholdInput.value);
             
-            timerId = setInterval(checkNoise, 100); 
-        } catch (err) {
+            // 여기서 mimeType 체크를 유연하게 함
+            setupMediaRecorder(stream);
+            
+            isMonitoring = true; document.body.classList.add('monitoring');
+            btnToggle.innerText = "중지"; btnToggle.classList.add('active');
+            saveLogToDB('EVENT', '측정 시작', thresholdInput.value);
+            timerId = setInterval(checkNoise, 100);
+        } catch (err) { 
             console.error(err);
-            // 구체적인 에러 메시지를 보여주면 원인 파악이 쉽습니다.
-            alert("마이크 사용 불가: " + err.message); 
+            alert("마이크 실행 오류: " + err.message); 
         }
-    } else {
-        stopAll();
-    }
+    } else { stopAll(); }
 }
 
 function setupMediaRecorder(stream) {
-    // 사파리(iOS) 호환 mimeType 체크
+    // 사파리 대응 mimeType 순차 확인
     const types = ['audio/mp4', 'audio/webm', 'audio/ogg'];
-    let selectedType = '';
+    let selectedType = types.find(t => MediaRecorder.isTypeSupported(t)) || '';
     
-    for (let type of types) {
-        if (MediaRecorder.isTypeSupported(type)) {
-            selectedType = type;
-            break;
-        }
-    }
-
-    // 타입을 못 찾으면 브라우저 기본값 사용
-    const options = selectedType ? { mimeType: selectedType } : {};
-    mediaRecorder = new MediaRecorder(stream, options);
-    
+    mediaRecorder = new MediaRecorder(stream, selectedType ? { mimeType: selectedType } : {});
     let chunks = [];
+    
     mediaRecorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
             chunks.push(e.data);
             if (!isRecording && chunks.length > 5) chunks.shift(); 
         }
     };
-
+    
     mediaRecorder.onstop = () => {
         if (chunks.length > 0 && isMonitoring) {
-            // 저장할 때도 실제 사용된 type으로 Blob 생성
             const blob = new Blob(chunks, { type: mediaRecorder.mimeType });
             const tx = db.transaction([AUDIO_STORE], "readwrite");
-            tx.objectStore(AUDIO_STORE).add({ 
-                blob: blob, 
-                timestamp: Date.now(), 
-                time: new Date().toLocaleTimeString() 
-            });
+            tx.objectStore(AUDIO_STORE).add({ blob, timestamp: Date.now(), time: new Date().toLocaleTimeString() });
         }
-        if (isMonitoring) {
-            chunks = [];
-            mediaRecorder.start(1000); 
-        }
+        if (isMonitoring) { chunks = []; mediaRecorder.start(1000); }
     };
-
-    mediaRecorder.start(1000); 
+    mediaRecorder.start(1000);
 }
 
 function checkNoise() {
@@ -157,13 +120,12 @@ function stopAll() {
     if (wakeLock) { wakeLock.release(); wakeLock = null; }
     clearInterval(timerId); if (recordingTimeout) clearTimeout(recordingTimeout);
     if (audioContext) audioContext.close();
-    if (mediaRecorder) { isRecording = false; mediaRecorder.stop(); }
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') { isRecording = false; mediaRecorder.stop(); }
     isMonitoring = false; document.body.classList.remove('monitoring', 'recording-active', 'detected');
     btnToggle.innerText = "측정 시작"; btnToggle.classList.remove('active');
     dbDisplay.innerText = "0"; saveLogToDB('EVENT', '측정 중단', thresholdInput.value);
 }
 
-// 팝업 & 내보내기 로직
 document.getElementById('btn-show-audios').onclick = () => {
     document.getElementById('audio-modal').style.display = 'flex';
     const tx = db.transaction([AUDIO_STORE], "readonly");
@@ -176,14 +138,11 @@ document.getElementById('btn-show-audios').onclick = () => {
             const div = document.createElement('div'); div.className = 'audio-item';
             div.innerHTML = `<div><b>${name}</b><br><small>${a.time}</small></div><button class="btn-down" style="background:#30d158;padding:8px;border-radius:8px">받기</button>`;
             div.querySelector('.btn-down').onclick = () => {
-                const url = URL.createObjectURL(a.blob);
-                const link = document.createElement('a');
-                link.href = url;
-                // 실제 저장된 타입에 따라 확장자 결정
-                const extension = a.blob.type.includes('mp4') ? 'm4a' : 'webm';
-                link.download = `${name}.${extension}`;
-                link.click();
-                URL.revokeObjectURL(url);
+                const url = URL.createObjectURL(a.blob); const link = document.createElement('a');
+                link.href = url; 
+                const ext = a.blob.type.includes('mp4') ? 'm4a' : 'webm';
+                link.download = `${name}.${ext}`; 
+                link.click(); URL.revokeObjectURL(url);
             };
             audioListContainer.appendChild(div);
         });
